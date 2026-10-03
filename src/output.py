@@ -4,17 +4,75 @@ import json
 import cv2
 import numpy as np
 
+FIX_LOOP_VERSION = "edge_refined_v1"
+
+
+def _intersection_over_union(box_a, box_b):
+    ax1, ay1, ax2, ay2 = box_a
+    bx1, by1, bx2, by2 = box_b
+
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+
+    intersection_width = max(0, ix2 - ix1)
+    intersection_height = max(0, iy2 - iy1)
+    intersection = intersection_width * intersection_height
+
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+
+    union = area_a + area_b - intersection
+
+    if union == 0:
+        return 0.0
+
+    return intersection / union
+
+
+def _edge_support(edges, x, y, w, h):
+    """
+    Measure how strongly the candidate boundary is supported by image edges.
+    """
+
+    image_height, image_width = edges.shape
+
+    margin = max(3, int(min(w, h) * 0.03))
+
+    x1 = max(0, x - margin)
+    y1 = max(0, y - margin)
+    x2 = min(image_width, x + w + margin)
+    y2 = min(image_height, y + h + margin)
+
+    region = edges[y1:y2, x1:x2]
+
+    if region.size == 0:
+        return 0.0
+
+    return float(np.mean(region > 0))
+
 
 def detect_openings(image):
     """
     Development opening detector.
 
-    Detects large rectangular candidate regions from a single image.
+    Uses contour geometry plus edge-support scoring to reduce weak
+    rectangular false positives.
+
     Metric dimensions remain uncalibrated until camera/scene scale
     is available.
     """
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    edges = cv2.Canny(
+        blurred,
+        50,
+        150,
+    )
 
     _, binary = cv2.threshold(
         gray,
@@ -66,15 +124,62 @@ def detect_openings(image):
         if aspect_ratio < 0.35 or aspect_ratio > 2.5:
             continue
 
-        # Very tall rectangles are likely doors.
+        # Fix Loop refinement:
+        # reject irregular contours whose occupied area is too small
+        # relative to their bounding rectangle.
+        contour_area = cv2.contourArea(contour)
+
+        if contour_area <= 0:
+            continue
+
+        rectangularity = contour_area / float(area)
+
+        if rectangularity < 0.55:
+            continue
+
+        perimeter = cv2.arcLength(contour, True)
+
+        if perimeter <= 0:
+            continue
+
+        approx = cv2.approxPolyDP(
+            contour,
+            0.03 * perimeter,
+            True,
+        )
+
+        polygon_support = min(
+            1.0,
+            len(approx) / 4.0,
+        )
+
+        edge_support = _edge_support(
+            edges,
+            x,
+            y,
+            w,
+            h,
+        )
+
+        if edge_support < 0.015:
+            continue
+
+        geometric_score = min(
+            1.0,
+            rectangularity * 1.25,
+        )
+
+        confidence = (
+            0.45 * geometric_score
+            + 0.30 * polygon_support
+            + 0.25 * min(1.0, edge_support * 8.0)
+        )
+
         if h > w * 1.4:
             opening_type = "door"
-            confidence = 0.80
 
-        # Wider rectangles are likely windows.
         elif w > h * 1.2:
             opening_type = "window"
-            confidence = 0.75
 
         else:
             continue
@@ -90,40 +195,43 @@ def detect_openings(image):
                 ],
                 "width_px": int(w),
                 "height_px": int(h),
-                "confidence": confidence,
+                "confidence": round(
+                    float(confidence),
+                    3,
+                ),
                 "measurement_status": "uncalibrated",
                 "width_m": None,
                 "height_m": None,
+                "rectangularity": round(
+                    float(rectangularity),
+                    3,
+                ),
+                "edge_support": round(
+                    float(edge_support),
+                    3,
+                ),
             }
         )
 
-    # Remove overlapping duplicate detections.
     candidates.sort(
-        key=lambda item: (
-            item["width_px"] * item["height_px"]
-        ),
+        key=lambda item: item["confidence"],
         reverse=True,
     )
 
     openings = []
 
     for candidate in candidates:
-        x1, y1, x2, y2 = candidate["bbox_px"]
+        candidate_box = candidate["bbox_px"]
 
         duplicate = False
 
         for existing in openings:
-            ex1, ey1, ex2, ey2 = existing["bbox_px"]
+            existing_box = existing["bbox_px"]
 
-            intersection_x1 = max(x1, ex1)
-            intersection_y1 = max(y1, ey1)
-            intersection_x2 = min(x2, ex2)
-            intersection_y2 = min(y2, ey2)
-
-            if (
-                intersection_x2 > intersection_x1
-                and intersection_y2 > intersection_y1
-            ):
+            if _intersection_over_union(
+                candidate_box,
+                existing_box,
+            ) > 0.35:
                 duplicate = True
                 break
 
@@ -171,199 +279,180 @@ def estimate_room_from_image(image):
             dx = abs(x2 - x1)
             dy = abs(y2 - y1)
 
-            if dx > 2 * dy:
+            if dx > dy * 3:
                 horizontal_lengths.append(dx)
 
-            elif dy > 2 * dx:
+            elif dy > dx * 3:
                 vertical_lengths.append(dy)
 
-    height, width = gray.shape
+    if horizontal_lengths:
+        image_width_px = max(horizontal_lengths)
+    else:
+        image_width_px = image.shape[1]
 
-    room_width_px = (
-        max(horizontal_lengths)
-        if horizontal_lengths
-        else width * 0.8
-    )
+    if vertical_lengths:
+        image_height_px = max(vertical_lengths)
+    else:
+        image_height_px = image.shape[0]
 
-    room_length_px = (
-        max(vertical_lengths)
-        if vertical_lengths
-        else height * 0.6
-    )
-
-    room_width_m = round(
-        room_width_px / width * 6.0,
+    # Development-only normalization.
+    # These values are NOT calibrated measurements.
+    width_m = round(
+        6.0 * image_width_px / image.shape[1],
         2,
     )
 
-    room_length_m = round(
-        room_length_px / height * 4.0,
+    length_m = round(
+        4.0 * image_height_px / image.shape[0],
         2,
     )
 
-    floor_area = round(
-        room_width_m * room_length_m,
+    ceiling_height_m = 2.70
+
+    floor_area_m2 = round(
+        width_m * length_m,
         2,
     )
 
     openings = detect_openings(image)
 
-    geometry = {
+    result = {
         "schema_version": "0.3",
 
-        "room": {
-            "id": "room_1",
-
-            "dimensions": {
-                "width_m": room_width_m,
-                "length_m": room_length_m,
-                "ceiling_height_m": 2.70,
-                "floor_area_m2": floor_area,
-            },
-
-            "uncertainty": {
-                "width_m": [
-                    round(
-                        max(0, room_width_m - 0.25),
-                        2,
-                    ),
-                    round(
-                        room_width_m + 0.25,
-                        2,
-                    ),
-                ],
-
-                "length_m": [
-                    round(
-                        max(0, room_length_m - 0.25),
-                        2,
-                    ),
-                    round(
-                        room_length_m + 0.25,
-                        2,
-                    ),
-                ],
-
-                "ceiling_height_m": [
-                    2.65,
-                    2.75,
-                ],
-
-                "floor_area_m2": [
-                    round(
-                        max(0, floor_area - 1.0),
-                        2,
-                    ),
-                    round(
-                        floor_area + 1.0,
-                        2,
-                    ),
-                ],
-            },
-
-            "openings": openings,
-
-            "surfaces": {
-                "walls": [],
-                "floor": {
-                    "area_m2": floor_area,
-                },
-                "ceiling": {
-                    "height_m": 2.70,
-                },
-            },
-
-            "damage": [],
-
-            "concealed_damage": {
-                "status": "unknown",
-                "flags": [],
-                "rule": None,
-            },
-
-            "scope": [],
-
-            "confidence": {
-                "overall": 0.30,
-                "geometry": 0.25,
-                "openings": (
-                    min(1.0, len(openings) / 2)
-                    if openings
-                    else 0.0
-                ),
-                "damage": 0.0,
-            },
+        "dimensions": {
+            "width_m": width_m,
+            "length_m": length_m,
+            "ceiling_height_m": ceiling_height_m,
+            "floor_area_m2": floor_area_m2,
         },
 
-        "property": {
-            "rooms": ["room_1"],
-            "adjacency": [],
+        "uncertainty": {
+            "width_m": None,
+            "length_m": None,
+            "ceiling_height_m": None,
+            "floor_area_m2": None,
+        },
+
+        "openings": openings,
+
+        "surfaces": [
+            {
+                "id": "floor_1",
+                "type": "floor",
+                "area_m2": floor_area_m2,
+                "confidence": 0.5,
+            },
+            {
+                "id": "wall_1",
+                "type": "wall",
+                "area_m2": None,
+                "confidence": 0.4,
+            },
+            {
+                "id": "wall_2",
+                "type": "wall",
+                "area_m2": None,
+                "confidence": 0.4,
+            },
+            {
+                "id": "wall_3",
+                "type": "wall",
+                "area_m2": None,
+                "confidence": 0.4,
+            },
+            {
+                "id": "wall_4",
+                "type": "wall",
+                "area_m2": None,
+                "confidence": 0.4,
+            },
+            {
+                "id": "ceiling_1",
+                "type": "ceiling",
+                "area_m2": floor_area_m2,
+                "confidence": 0.5,
+            },
+        ],
+
+        "damage": [],
+
+        "concealed_damage": {
+            "flag": False,
+            "rule": "No concealed damage inference in development baseline.",
+            "confidence": 0.0,
+        },
+
+        "scope": [],
+
+        "confidence": {
+            "overall": 0.45,
+            "geometry": 0.35,
+            "openings": (
+                round(
+                    float(
+                        np.mean(
+                            [
+                                opening["confidence"]
+                                for opening in openings
+                            ]
+                        )
+                    ),
+                    3,
+                )
+                if openings
+                else 0.0
+            ),
         },
 
         "provenance": {
             "estimator": "opencv_hough_baseline",
             "opening_detector": "opencv_contour_baseline",
-            "source_type": "photo",
+            "fix_loop_version": FIX_LOOP_VERSION,
             "benchmark_ready": False,
             "metric_calibration": "not_available",
             "note": (
-                "Development baseline only. "
-                "Measurements are not benchmark ground truth."
+                "Development baseline only. Measurements are not "
+                "benchmark ground truth."
             ),
         },
     }
 
-    return geometry
+    return result
 
 
-def create_room_plan(geometry, output_path):
-    dimensions = geometry["room"]["dimensions"]
+def create_room_plan(image, result):
+    """
+    Create a simple rendered room plan for development evidence.
+    """
 
-    width_m = dimensions["width_m"]
-    length_m = dimensions["length_m"]
-
-    scale = 100
-
-    canvas_width = int(
-        width_m * scale + 200
-    )
-
-    canvas_height = int(
-        length_m * scale + 200
-    )
+    height, width = image.shape[:2]
 
     canvas = np.ones(
-        (
-            canvas_height,
-            canvas_width,
-            3,
-        ),
+        (height, width, 3),
         dtype=np.uint8,
     ) * 255
 
-    x1 = 100
-    y1 = 100
+    room_width = int(width * 0.75)
+    room_height = int(height * 0.60)
 
-    x2 = int(
-        x1 + width_m * scale
-    )
+    start_x = int((width - room_width) / 2)
+    start_y = int((height - room_height) / 2)
 
-    y2 = int(
-        y1 + length_m * scale
-    )
+    end_x = start_x + room_width
+    end_y = start_y + room_height
 
     cv2.rectangle(
         canvas,
-        (x1, y1),
-        (x2, y2),
+        (start_x, start_y),
+        (end_x, end_y),
         (0, 0, 0),
-        3,
+        4,
     )
 
     cv2.putText(
         canvas,
-        f"{width_m:.2f} m",
-        (x1 + 20, y1 - 25),
+        f"Width: {result['dimensions']['width_m']} m",
+        (start_x, start_y - 30),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.7,
         (0, 0, 0),
@@ -372,31 +461,46 @@ def create_room_plan(geometry, output_path):
 
     cv2.putText(
         canvas,
-        f"{length_m:.2f} m",
-        (x2 + 10, (y1 + y2) // 2),
+        f"Length: {result['dimensions']['length_m']} m",
+        (start_x, end_y + 30),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.7,
         (0, 0, 0),
         2,
     )
 
-    cv2.putText(
-        canvas,
-        f"Area: {dimensions['floor_area_m2']:.2f} m2",
-        (x1 + 20, y2 + 45),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
-        (0, 0, 0),
-        2,
-    )
+    for opening in result.get("openings", []):
+        x1, y1, x2, y2 = opening["bbox_px"]
 
-    cv2.imwrite(
-        str(output_path),
-        canvas,
-    )
+        cv2.rectangle(
+            canvas,
+            (x1, y1),
+            (x2, y2),
+            (0, 0, 255),
+            2,
+        )
+
+        cv2.putText(
+            canvas,
+            opening["type"],
+            (x1, max(20, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 0, 255),
+            2,
+        )
+
+    return canvas
 
 
-def save_room_output(geometry, output_dir):
+def save_room_output(
+    result,
+    output_dir,
+):
+    """
+    Save structured JSON output and rendered plan.
+    """
+
     output_dir = Path(output_dir)
 
     output_dir.mkdir(
@@ -405,22 +509,85 @@ def save_room_output(geometry, output_dir):
     )
 
     json_path = output_dir / "result.json"
-    image_path = output_dir / "room_plan.png"
+    plan_path = output_dir / "room_plan.png"
 
-    with open(
-        json_path,
+    with json_path.open(
         "w",
         encoding="utf-8",
-    ) as f:
+    ) as file:
         json.dump(
-            geometry,
-            f,
+            result,
+            file,
             indent=2,
         )
 
-    create_room_plan(
-        geometry,
-        image_path,
+    # Create a simple rendered plan from the structured result.
+    canvas = np.ones(
+        (700, 1000, 3),
+        dtype=np.uint8,
+    ) * 255
+
+    room_width = 750
+    room_height = 420
+
+    start_x = 125
+    start_y = 140
+
+    end_x = start_x + room_width
+    end_y = start_y + room_height
+
+    cv2.rectangle(
+        canvas,
+        (start_x, start_y),
+        (end_x, end_y),
+        (0, 0, 0),
+        4,
     )
 
-    return json_path, image_path
+    cv2.putText(
+        canvas,
+        f"Width: {result['dimensions']['width_m']} m",
+        (start_x, start_y - 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (0, 0, 0),
+        2,
+    )
+
+    cv2.putText(
+        canvas,
+        f"Length: {result['dimensions']['length_m']} m",
+        (start_x, end_y + 35),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (0, 0, 0),
+        2,
+    )
+
+    for opening in result.get("openings", []):
+        x1, y1, x2, y2 = opening["bbox_px"]
+
+        cv2.rectangle(
+            canvas,
+            (x1, y1),
+            (x2, y2),
+            (0, 0, 255),
+            2,
+        )
+
+        cv2.putText(
+            canvas,
+            opening["type"],
+            (x1, max(20, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 0, 255),
+            2,
+        )
+
+    cv2.imwrite(
+        str(plan_path),
+        canvas,
+    )
+
+    return json_path, plan_path

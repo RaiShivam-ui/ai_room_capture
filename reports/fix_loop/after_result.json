@@ -1,98 +1,109 @@
 {
   "schema_version": "0.3",
-  "room": {
-    "id": "room_1",
-    "dimensions": {
-      "width_m": 5.03,
-      "length_m": 1.89,
-      "ceiling_height_m": 2.7,
-      "floor_area_m2": 9.51
-    },
-    "uncertainty": {
-      "width_m": [
-        4.78,
-        5.28
-      ],
-      "length_m": [
-        1.64,
-        2.14
-      ],
-      "ceiling_height_m": [
-        2.65,
-        2.75
-      ],
-      "floor_area_m2": [
-        8.51,
-        10.51
-      ]
-    },
-    "openings": [
-      {
-        "type": "door",
-        "bbox_px": [
-          618,
-          158,
-          793,
-          433
-        ],
-        "width_px": 175,
-        "height_px": 275,
-        "confidence": 0.8,
-        "measurement_status": "uncalibrated",
-        "width_m": null,
-        "height_m": null,
-        "id": "door_1"
-      },
-      {
-        "type": "window",
-        "bbox_px": [
-          228,
-          178,
-          433,
-          333
-        ],
-        "width_px": 205,
-        "height_px": 155,
-        "confidence": 0.75,
-        "measurement_status": "uncalibrated",
-        "width_m": null,
-        "height_m": null,
-        "id": "window_2"
-      }
-    ],
-    "surfaces": {
-      "walls": [],
-      "floor": {
-        "area_m2": 9.51
-      },
-      "ceiling": {
-        "height_m": 2.7
-      }
-    },
-    "damage": [],
-    "concealed_damage": {
-      "status": "unknown",
-      "flags": [],
-      "rule": null
-    },
-    "scope": [],
-    "confidence": {
-      "overall": 0.3,
-      "geometry": 0.25,
-      "openings": 1.0,
-      "damage": 0.0
-    }
+  "dimensions": {
+    "width_m": 5.03,
+    "length_m": 1.89,
+    "ceiling_height_m": 2.7,
+    "floor_area_m2": 9.51
   },
-  "property": {
-    "rooms": [
-      "room_1"
-    ],
-    "adjacency": []
+  "uncertainty": {
+    "width_m": null,
+    "length_m": null,
+    "ceiling_height_m": null,
+    "floor_area_m2": null
+  },
+  "openings": [
+    {
+      "type": "window",
+      "bbox_px": [
+        228,
+        178,
+        433,
+        333
+      ],
+      "width_px": 205,
+      "height_px": 155,
+      "confidence": 0.83,
+      "measurement_status": "uncalibrated",
+      "width_m": null,
+      "height_m": null,
+      "rectangularity": 0.988,
+      "edge_support": 0.04,
+      "id": "window_1"
+    },
+    {
+      "type": "door",
+      "bbox_px": [
+        618,
+        158,
+        793,
+        433
+      ],
+      "width_px": 175,
+      "height_px": 275,
+      "confidence": 0.784,
+      "measurement_status": "uncalibrated",
+      "width_m": null,
+      "height_m": null,
+      "rectangularity": 0.991,
+      "edge_support": 0.017,
+      "id": "door_2"
+    }
+  ],
+  "surfaces": [
+    {
+      "id": "floor_1",
+      "type": "floor",
+      "area_m2": 9.51,
+      "confidence": 0.5
+    },
+    {
+      "id": "wall_1",
+      "type": "wall",
+      "area_m2": null,
+      "confidence": 0.4
+    },
+    {
+      "id": "wall_2",
+      "type": "wall",
+      "area_m2": null,
+      "confidence": 0.4
+    },
+    {
+      "id": "wall_3",
+      "type": "wall",
+      "area_m2": null,
+      "confidence": 0.4
+    },
+    {
+      "id": "wall_4",
+      "type": "wall",
+      "area_m2": null,
+      "confidence": 0.4
+    },
+    {
+      "id": "ceiling_1",
+      "type": "ceiling",
+      "area_m2": 9.51,
+      "confidence": 0.5
+    }
+  ],
+  "damage": [],
+  "concealed_damage": {
+    "flag": false,
+    "rule": "No concealed damage inference in development baseline.",
+    "confidence": 0.0
+  },
+  "scope": [],
+  "confidence": {
+    "overall": 0.45,
+    "geometry": 0.35,
+    "openings": 0.807
   },
   "provenance": {
     "estimator": "opencv_hough_baseline",
     "opening_detector": "opencv_contour_baseline",
-    "source_type": "photo",
+    "fix_loop_version": "edge_refined_v1",
     "benchmark_ready": false,
     "metric_calibration": "not_available",
     "note": "Development baseline only. Measurements are not benchmark ground truth."
