@@ -13,6 +13,11 @@ from src.output import (
     save_room_output,
 )
 
+from src.tier_pipeline import (
+    process_video,
+    process_lidar,
+)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -25,7 +30,10 @@ def main():
         choices=["photos", "video", "lidar"],
     )
 
-    parser.add_argument("--input", required=True)
+    parser.add_argument(
+        "--input",
+        required=True,
+    )
 
     args = parser.parse_args()
 
@@ -39,7 +47,10 @@ def main():
 
         result = analyze_images(args.input)
 
-        print(f"Images processed: {result['image_count']}")
+        print(
+            f"Images processed: "
+            f"{result['image_count']}"
+        )
 
         matches = match_images(images)
 
@@ -87,10 +98,31 @@ def main():
         print(f"JSON: {json_path}")
         print(f"Plan: {plan_path}")
 
-    else:
-        print(
-            f"Tier '{args.tier}' is not implemented yet."
+    elif args.tier == "video":
+        output_dir = (
+            Path("outputs") / "video_capture"
         )
+
+        metadata_path = process_video(
+            args.input,
+            output_dir,
+        )
+
+        print("\nVideo capture:")
+        print(f"Metadata: {metadata_path}")
+
+    elif args.tier == "lidar":
+        output_dir = (
+            Path("outputs") / "lidar_capture"
+        )
+
+        metadata_path = process_lidar(
+            args.input,
+            output_dir,
+        )
+
+        print("\nLiDAR capture:")
+        print(f"Metadata: {metadata_path}")
 
 
 if __name__ == "__main__":
