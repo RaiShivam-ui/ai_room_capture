@@ -1,8 +1,6 @@
 import argparse
 from pathlib import Path
 
-import cv2
-
 from src.photo_pipeline import (
     analyze_images,
     load_images,
@@ -10,21 +8,10 @@ from src.photo_pipeline import (
     estimate_transforms,
 )
 
-
-def stitch_images(images):
-    """Create a panorama from the captured room images."""
-    if len(images) < 2:
-        return images[0][1] if images else None
-
-    image_list = [image for _, image in images]
-
-    stitcher = cv2.Stitcher_create()
-    status, panorama = stitcher.stitch(image_list)
-
-    if status != cv2.Stitcher_OK:
-        return None
-
-    return panorama
+from src.output import (
+    estimate_room_from_image,
+    save_room_output,
+)
 
 
 def main():
@@ -84,23 +71,21 @@ def main():
                     f"FAILED - {transform['reason']}"
                 )
 
-        panorama = stitch_images(images)
-
-        if panorama is None:
-            print("\nPanorama stitching failed.")
-            return
-
-        output_dir = Path("outputs")
-        output_dir.mkdir(exist_ok=True)
-
-        output_path = output_dir / "photo_panorama.jpg"
-
-        cv2.imwrite(
-            str(output_path),
-            panorama,
+        # Temporary development geometry.
+        geometry = estimate_room_from_image(
+            images[0][1]
         )
 
-        print(f"\nPanorama saved to: {output_path}")
+        output_dir = Path("outputs") / "test_room"
+
+        json_path, plan_path = save_room_output(
+            geometry,
+            output_dir,
+        )
+
+        print("\nRoom output:")
+        print(f"JSON: {json_path}")
+        print(f"Plan: {plan_path}")
 
     else:
         print(
