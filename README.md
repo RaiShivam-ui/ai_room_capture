@@ -1,4 +1,4 @@
-\# AI Room Capture
+# AI Room Capture
 
 
 
@@ -12,11 +12,11 @@ The system is designed around three consumer capture routes:
 
 
 
-\- \*\*Tier 1:\*\* unordered room photographs
+- **Tier 1:** unordered room photographs
 
-\- \*\*Tier 2:\*\* handheld RGB video
+- **Tier 2:** handheld RGB video
 
-\- \*\*Tier 3:\*\* LiDAR-enabled capture
+- **Tier 3:** LiDAR-enabled capture
 
 
 
@@ -28,11 +28,11 @@ and provenance.
 
 
 
-\---
+---
 
 
 
-\## 1. Project Objective
+## 1. Project Objective
 
 
 
@@ -42,21 +42,21 @@ that can be used for:
 
 
 
-\- dimensioned room plans
+- dimensioned room plans
 
-\- multi-room property plans
+- multi-room property plans
 
-\- wall and opening measurements
+- wall and opening measurements
 
-\- damage localization
+- damage localization
 
-\- concealed-damage flags
+- concealed-damage flags
 
-\- scope line items
+- scope line items
 
-\- measurement confidence intervals
+- measurement confidence intervals
 
-\- machine-readable JSON
+- machine-readable JSON
 
 
 
@@ -66,11 +66,11 @@ and version-controlled milestones.
 
 
 
-\---
+---
 
 
 
-\## 2. Current Implementation Status
+## 2. Current Implementation Status
 
 
 
@@ -122,11 +122,11 @@ They are explicitly marked as non-benchmark-ready in the generated output.
 
 
 
-\---
+---
 
 
 
-\## 3. Architecture
+## 3. Architecture
 
 
 
@@ -189,4 +189,5 @@ They are explicitly marked as non-benchmark-ready in the generated output.
 &#x20;                      v
 
 &#x20;             Spatial JSON + Plan
+
 
