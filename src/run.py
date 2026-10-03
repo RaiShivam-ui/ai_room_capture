@@ -37,6 +37,15 @@ def main():
 
     args = parser.parse_args()
 
+    input_path = Path(args.input)
+
+    if not input_path.exists():
+        raise FileNotFoundError(
+            f"Input not found: {input_path}"
+        )
+
+    capture_name = input_path.name
+
     if args.tier == "photos":
         images = load_images(args.input)
 
@@ -82,12 +91,13 @@ def main():
                     f"FAILED - {transform['reason']}"
                 )
 
-        # Temporary development geometry.
         geometry = estimate_room_from_image(
             images[0][1]
         )
 
-        output_dir = Path("outputs") / "test_room"
+        output_dir = (
+            Path("outputs") / capture_name
+        )
 
         json_path, plan_path = save_room_output(
             geometry,
@@ -100,7 +110,7 @@ def main():
 
     elif args.tier == "video":
         output_dir = (
-            Path("outputs") / "video_capture"
+            Path("outputs") / capture_name
         )
 
         metadata_path = process_video(
@@ -113,7 +123,7 @@ def main():
 
     elif args.tier == "lidar":
         output_dir = (
-            Path("outputs") / "lidar_capture"
+            Path("outputs") / capture_name
         )
 
         metadata_path = process_lidar(
